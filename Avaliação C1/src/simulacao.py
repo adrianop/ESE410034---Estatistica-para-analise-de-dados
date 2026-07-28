@@ -119,14 +119,14 @@ def plotar_comparativo(tempo, angulo_real, leitura_acelerometro,
     """Compara o sinal real, o medido e o filtrado."""
     plt.figure()
     plt.plot(tempo, leitura_acelerometro, linewidth=1, alpha=0.5,
-             label=f'Acelerômetro (medido) — EQM {eqm_acelerometro:.1f}°²')
+             label='Acelerômetro')
     plt.plot(tempo, angulo_real, linestyle='--', color='black',
              label='Inclinação real')
     plt.plot(tempo, angulo_filtrado,
-             label=f'Filtro de Kalman — EQM {eqm_filtro:.2f}°²')
+             label='Filtro de Kalman')
     plt.xlabel('Tempo [s]')
     plt.ylabel('Inclinação do corpo [°]')
-    plt.title('O filtro recupera o movimento real escondido no ruído')
+    plt.title('Comparação entre o sinal real, medido e filtrado')
     plt.legend()
     plt.grid(alpha=0.3)
     salvar('comparativo_real_medido_filtrado.png')
@@ -139,12 +139,12 @@ def plotar_deriva(tempo, angulo_real, angulo_so_giroscopio, angulo_filtrado,
     plt.plot(tempo, angulo_real, linestyle='--', color='black',
              label='Inclinação real')
     plt.plot(tempo, angulo_so_giroscopio,
-             label=f'Só giroscópio (integrado) — EQM {eqm_giroscopio:.1f}°²')
+             label='Giroscópio integrado')
     plt.plot(tempo, angulo_filtrado,
-             label=f'Filtro de Kalman — EQM {eqm_filtro:.2f}°²')
+             label='Filtro de Kalman')
     plt.xlabel('Tempo [s]')
     plt.ylabel('Inclinação do corpo [°]')
-    plt.title('Por que não dá para confiar só no giroscópio: a deriva')
+    plt.title('Deriva da integração do giroscópio')
     plt.legend()
     plt.grid(alpha=0.3)
     salvar('deriva_giroscopio.png')
@@ -158,7 +158,7 @@ def plotar_bias(tempo, bias_estimado, bias_verdadeiro):
     plt.plot(tempo, bias_estimado, label='Bias estimado pelo filtro')
     plt.xlabel('Tempo [s]')
     plt.ylabel('Vício de zero do giroscópio [°/s]')
-    plt.title('O filtro descobre sozinho o defeito do giroscópio')
+    plt.title('Estimativa do bias do giroscópio')
     plt.legend()
     plt.grid(alpha=0.3)
     salvar('estimativa_bias.png')
@@ -170,7 +170,7 @@ def plotar_ganho(tempo, ganho_da_inclinacao):
     plt.plot(tempo, ganho_da_inclinacao)
     plt.xlabel('Tempo [s]')
     plt.ylabel('Ganho de Kalman da inclinação  K[0]')
-    plt.title('O filtro deixa de engolir a medição conforme ganha confiança')
+    plt.title('Evolução do ganho de Kalman')
     plt.yscale('log')  # a queda passa de uma ordem de grandeza
     plt.grid(alpha=0.3, which='both')
     salvar('ganho_de_kalman.png')
