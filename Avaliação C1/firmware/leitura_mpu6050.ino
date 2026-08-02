@@ -1,7 +1,10 @@
 /*
   Leitura da MPU6050 e envio das amostras pela Serial.
 
-  Ligacoes no Arduino Uno: VCC->5V, GND->GND, SDA->A4, SCL->A5.
+  Ligacoes I2C:
+  - Arduino Mega 2560: SDA->20 e SCL->21.
+  - Arduino Uno: SDA->A4 e SCL->A5.
+  Use a tensao indicada no modulo MPU6050 (o CI sem regulador opera em 3,3 V).
   Saida a 50 Hz, 115200 baud: t_ms,ax,ay,az,gx,gy,gz (g e graus/s).
 */
 
@@ -63,7 +66,7 @@ void setup() {
 
   while (!sensorRespondeu()) {
     Serial.println(F("MPU6050 nao respondeu no I2C."));
-    Serial.println(F("Confira VCC->5V, GND->GND, SDA->A4, SCL->A5."));
+    Serial.println(F("Confira alimentacao e I2C (Mega: SDA 20/SCL 21; Uno: A4/A5)."));
     delay(3000);
   }
 

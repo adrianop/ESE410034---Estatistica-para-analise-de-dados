@@ -1,238 +1,175 @@
-"""Simulação do filtro de Kalman para fusão de dados de uma IMU."""
 
-import os
+"""
+simulacao.py
+Parte B - Simulação sintética de fusão sensorial IMU com Filtro de Kalman.
 
-import matplotlib.pyplot as plt
+O exemplo estima um ângulo 1D (roll ou pitch) combinando:
+- Giroscópio: bom no curto prazo, mas sofre com bias/drift ao integrar.
+- Acelerômetro: fornece ângulo absoluto ruidoso.
+
+Unidades usadas: graus e graus/segundo.
+"""
+
+from pathlib import Path
+import sys
+
 import numpy as np
+import matplotlib.pyplot as plt
+
+# Permite executar como: python src/simulacao.py
+CURRENT_DIR = Path(__file__).resolve().parent
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.append(str(CURRENT_DIR))
 
 from kalman import KalmanFilter
 
 
-# Configuração dos gráficos
-try:
-    plt.style.use('seaborn-v0_8-colorblind')
-except OSError:
-    plt.style.use('seaborn-colorblind')
-
-plt.rcParams['figure.figsize'] = (12, 7)
-plt.rcParams['axes.labelsize'] = 16
-plt.rcParams['axes.titlesize'] = 16
-plt.rcParams['legend.fontsize'] = 13
-plt.rcParams['lines.linewidth'] = 3
-
-PASTA_FIGURAS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             '..', 'docs', 'figuras')
+def erro_quadratico_medio(y_true, y_pred):
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    return float(np.mean((y_true - y_pred) ** 2))
 
 
-# Geração dos sinais simulados
-def gerar_sinais_sinteticos(dt=0.01,
-                            duracao_s=20.0,
-                            amplitude_graus=30.0,
-                            frequencia_hz=0.25,
-                            desvio_giroscopio=0.5,
-                            bias_giroscopio=2.0,
-                            desvio_acelerometro=4.0,
-                            semente=42):
-    """Gera os sinais simulados do giroscópio e acelerômetro."""
-    gerador = np.random.default_rng(semente)
-    tempo = np.arange(0.0, duracao_s, dt)
+def criar_filtro_imu_1d(dt, var_angulo=1e-3, var_bias=1e-5, var_acelerometro=25.0):
+    """Cria o KF 1D para ângulo + bias do giroscópio.
 
-    angulo_real = amplitude_graus * np.sin(2 * np.pi * frequencia_hz * tempo)
-    velocidade_real = (amplitude_graus * 2 * np.pi * frequencia_hz
-                       * np.cos(2 * np.pi * frequencia_hz * tempo))
+    Estado:
+        x = [theta, bias]^T
 
-    leitura_giroscopio = (velocidade_real
-                          + bias_giroscopio
-                          + gerador.normal(0.0, desvio_giroscopio, tempo.size))
+    Entrada:
+        u = omega_giro_medido
 
-    leitura_acelerometro = (angulo_real
-                            + gerador.normal(0.0, desvio_acelerometro, tempo.size))
+    Modelo:
+        theta_k = theta_{k-1} + dt * (omega_giro - bias_{k-1})
+        bias_k  = bias_{k-1}
 
-    return tempo, angulo_real, leitura_giroscopio, leitura_acelerometro
-
-
-# Matrizes do modelo
-def montar_matrizes_imu(dt, desvio_giroscopio, desvio_acelerometro,
-                        passeio_do_bias=0.05):
-    """Monta as matrizes do filtro para o modelo da IMU."""
+    Em forma matricial:
+        x_k = F x_{k-1} + B u_k + w_k
+        z_k = H x_k + v_k
+    """
     F = np.array([[1.0, -dt],
-                  [0.0, 1.0]])
-
+                  [0.0,  1.0]])
     B = np.array([[dt],
                   [0.0]])
-
     H = np.array([[1.0, 0.0]])
-
-    Q = np.array([[(desvio_giroscopio * dt) ** 2, 0.0],
-                  [0.0, (passeio_do_bias ** 2) * dt]])
-
-    R = np.array([[desvio_acelerometro ** 2]])
-
-    x0 = np.array([[0.0],
-                   [0.0]])
-
-    P0 = np.diag([10.0 ** 2, 4.0 ** 2])
-
-    return F, B, H, Q, R, P0, x0
+    Q = np.diag([var_angulo, var_bias])
+    R = np.array([[var_acelerometro]])
+    P0 = np.diag([10.0, 1.0])
+    x0 = np.array([[0.0], [0.0]])
+    return KalmanFilter(F, B, H, Q, R, P0, x0)
 
 
-# Execução do filtro
-def rodar_filtro(leitura_giroscopio, leitura_acelerometro, dt,
-                 desvio_giroscopio, desvio_acelerometro):
-    """Executa o filtro ponto a ponto sobre os dados ruidosos."""
-    F, B, H, Q, R, P0, x0 = montar_matrizes_imu(dt, desvio_giroscopio,
-                                                desvio_acelerometro)
+def simular(seed=42, salvar_figuras=True):
+    rng = np.random.default_rng(seed)
 
-    filtro = KalmanFilter(F=F, B=B, H=H, Q=Q, R=R, P0=P0, x0=x0)
-
-    total = leitura_giroscopio.size
-    angulo_filtrado = np.zeros(total)
-    bias_estimado = np.zeros(total)
-    ganho_da_inclinacao = np.zeros(total)
-
-    for k in range(total):
-        filtro.predict(u=leitura_giroscopio[k])
-        estado, _covariancia, ganho = filtro.update(z=leitura_acelerometro[k])
-
-        angulo_filtrado[k] = estado[0, 0]
-        bias_estimado[k] = estado[1, 0]
-        ganho_da_inclinacao[k] = ganho[0, 0]
-
-    return angulo_filtrado, bias_estimado, ganho_da_inclinacao
-
-
-def calcular_eqm(estimativa, verdade):
-    """Erro quadrático médio entre a estimativa e o valor verdadeiro."""
-    return np.mean((estimativa - verdade) ** 2)
-
-
-# Geração dos gráficos
-def salvar(nome_do_arquivo):
-    """Salva a figura atual em docs/figuras/, criando a pasta se preciso."""
-    os.makedirs(PASTA_FIGURAS, exist_ok=True)
-    plt.savefig(os.path.join(PASTA_FIGURAS, nome_do_arquivo),
-                dpi=120, bbox_inches='tight')
-
-
-def plotar_comparativo(tempo, angulo_real, leitura_acelerometro,
-                       angulo_filtrado, eqm_acelerometro, eqm_filtro):
-    """Compara o sinal real, o medido e o filtrado."""
-    plt.figure()
-    plt.plot(tempo, leitura_acelerometro, linewidth=1, alpha=0.5,
-             label='Acelerômetro')
-    plt.plot(tempo, angulo_real, linestyle='--', color='black',
-             label='Inclinação real')
-    plt.plot(tempo, angulo_filtrado,
-             label='Filtro de Kalman')
-    plt.xlabel('Tempo [s]')
-    plt.ylabel('Inclinação do corpo [°]')
-    plt.title('Comparação entre o sinal real, medido e filtrado')
-    plt.legend()
-    plt.grid(alpha=0.3)
-    salvar('comparativo_real_medido_filtrado.png')
-
-
-def plotar_deriva(tempo, angulo_real, angulo_so_giroscopio, angulo_filtrado,
-                  eqm_giroscopio, eqm_filtro):
-    """Mostra a deriva da integração pura do giroscópio."""
-    plt.figure()
-    plt.plot(tempo, angulo_real, linestyle='--', color='black',
-             label='Inclinação real')
-    plt.plot(tempo, angulo_so_giroscopio,
-             label='Giroscópio integrado')
-    plt.plot(tempo, angulo_filtrado,
-             label='Filtro de Kalman')
-    plt.xlabel('Tempo [s]')
-    plt.ylabel('Inclinação do corpo [°]')
-    plt.title('Deriva da integração do giroscópio')
-    plt.legend()
-    plt.grid(alpha=0.3)
-    salvar('deriva_giroscopio.png')
-
-
-def plotar_bias(tempo, bias_estimado, bias_verdadeiro):
-    """Mostra a convergência do bias estimado."""
-    plt.figure()
-    plt.axhline(bias_verdadeiro, linestyle='--', color='black',
-                label=f'Bias verdadeiro ({bias_verdadeiro:.1f} °/s)')
-    plt.plot(tempo, bias_estimado, label='Bias estimado pelo filtro')
-    plt.xlabel('Tempo [s]')
-    plt.ylabel('Vício de zero do giroscópio [°/s]')
-    plt.title('Estimativa do bias do giroscópio')
-    plt.legend()
-    plt.grid(alpha=0.3)
-    salvar('estimativa_bias.png')
-
-
-def plotar_ganho(tempo, ganho_da_inclinacao):
-    """Mostra a queda do ganho de Kalman ao longo do tempo."""
-    plt.figure()
-    plt.plot(tempo, ganho_da_inclinacao)
-    plt.xlabel('Tempo [s]')
-    plt.ylabel('Ganho de Kalman da inclinação  K[0]')
-    plt.title('Evolução do ganho de Kalman')
-    plt.yscale('log')  # a queda passa de uma ordem de grandeza
-    plt.grid(alpha=0.3, which='both')
-    salvar('ganho_de_kalman.png')
-
-
-# Programa principal
-def main(mostrar_graficos=True):
+    # Tempo de simulação
     dt = 0.01
-    desvio_giroscopio = 0.5
-    bias_giroscopio = 2.0
-    desvio_acelerometro = 4.0
+    t_final = 20.0
+    t = np.arange(0.0, t_final, dt)
 
-    tempo, angulo_real, leitura_giroscopio, leitura_acelerometro = (
-        gerar_sinais_sinteticos(dt=dt,
-                                desvio_giroscopio=desvio_giroscopio,
-                                bias_giroscopio=bias_giroscopio,
-                                desvio_acelerometro=desvio_acelerometro))
+    # Sinal real de inclinação: combinação de senos para tornar a dinâmica mais rica
+    theta_real = 25.0 * np.sin(0.7 * t) + 8.0 * np.sin(1.8 * t)
+    omega_real = np.gradient(theta_real, dt)
 
-    angulo_filtrado, bias_estimado, ganho_da_inclinacao = rodar_filtro(
-        leitura_giroscopio, leitura_acelerometro, dt,
-        desvio_giroscopio, desvio_acelerometro)
+    # Sensores simulados
+    bias_giro_real = 0.8  # graus/s: pequeno erro constante do giroscópio
+    ruido_giro_std = 0.6
+    ruido_acc_std = 5.0
 
-    angulo_so_giroscopio = np.cumsum(leitura_giroscopio * dt)
+    gyro_medido = omega_real + bias_giro_real + rng.normal(0.0, ruido_giro_std, size=t.shape)
+    acc_medido = theta_real + rng.normal(0.0, ruido_acc_std, size=t.shape)
 
-    # Validação estatística
-    eqm_acelerometro = calcular_eqm(leitura_acelerometro, angulo_real)
-    eqm_giroscopio = calcular_eqm(angulo_so_giroscopio, angulo_real)
-    eqm_filtro = calcular_eqm(angulo_filtrado, angulo_real)
-    reducao = (1 - eqm_filtro / eqm_acelerometro) * 100
+    # Estimativa ingênua por integração do giroscópio para comparar drift
+    theta_giro_integrado = np.cumsum(gyro_medido) * dt
 
-    print('=' * 62)
-    print('VALIDACAO ESTATISTICA - Erro Quadratico Medio (EQM)')
-    print('=' * 62)
-    print(f'  Acelerometro sozinho ............ {eqm_acelerometro:9.3f} graus^2')
-    print(f'  Giroscopio sozinho (integrado) .. {eqm_giroscopio:9.3f} graus^2')
-    print(f'  Filtro de Kalman ................ {eqm_filtro:9.3f} graus^2')
-    print('-' * 62)
-    print(f'  Reducao do erro vs acelerometro:  {reducao:8.1f} %')
-    print(f'  Bias do giroscopio - real: {bias_giroscopio:.2f} graus/s | '
-          f'estimado: {bias_estimado[-1]:.2f} graus/s')
-    print(f'  Ganho de Kalman K[0] - inicial: {ganho_da_inclinacao[0]:.4f} | '
-          f'final: {ganho_da_inclinacao[-1]:.4f}')
-    print('=' * 62)
+    # Filtro de Kalman
+    kf = criar_filtro_imu_1d(
+        dt=dt,
+        var_angulo=1e-3,
+        var_bias=1e-5,
+        var_acelerometro=ruido_acc_std ** 2,
+    )
 
-    # Gráficos
-    plotar_comparativo(tempo, angulo_real, leitura_acelerometro,
-                       angulo_filtrado, eqm_acelerometro, eqm_filtro)
-    plotar_deriva(tempo, angulo_real, angulo_so_giroscopio, angulo_filtrado,
-                  eqm_giroscopio, eqm_filtro)
-    plotar_bias(tempo, bias_estimado, bias_giroscopio)
-    plotar_ganho(tempo, ganho_da_inclinacao)
+    theta_filtrado = []
+    bias_estimado = []
+    ganho_kalman_angulo = []
 
-    print(f'\nFiguras salvas em: {os.path.normpath(PASTA_FIGURAS)}')
+    for omega, z_acc in zip(gyro_medido, acc_medido):
+        kf.predict(u=omega)
+        x, P, K = kf.update(z=z_acc)
+        theta_filtrado.append(x[0, 0])
+        bias_estimado.append(x[1, 0])
+        ganho_kalman_angulo.append(K[0, 0])
 
-    if mostrar_graficos:
+    theta_filtrado = np.asarray(theta_filtrado)
+    bias_estimado = np.asarray(bias_estimado)
+    ganho_kalman_angulo = np.asarray(ganho_kalman_angulo)
+
+    mse_acc = erro_quadratico_medio(theta_real, acc_medido)
+    mse_giro = erro_quadratico_medio(theta_real, theta_giro_integrado)
+    mse_kf = erro_quadratico_medio(theta_real, theta_filtrado)
+
+    resultados = {
+        "dt": dt,
+        "ruido_giro_std": ruido_giro_std,
+        "ruido_acc_std": ruido_acc_std,
+        "bias_giro_real": bias_giro_real,
+        "mse_acelerometro": mse_acc,
+        "mse_giro_integrado": mse_giro,
+        "mse_kalman": mse_kf,
+        "melhoria_vs_acelerometro_pct": 100.0 * (1.0 - mse_kf / mse_acc),
+        "melhoria_vs_giro_pct": 100.0 * (1.0 - mse_kf / mse_giro),
+    }
+
+    if salvar_figuras:
+        out_dir = Path(__file__).resolve().parents[1] / "docs" / "figures"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        plt.figure(figsize=(12, 6))
+        plt.plot(t, theta_real, label="Ângulo real")
+        plt.plot(t, acc_medido, label="Acelerômetro ruidoso", alpha=0.35)
+        plt.plot(t, theta_giro_integrado, label="Giroscópio integrado", alpha=0.70)
+        plt.plot(t, theta_filtrado, label="Kalman filtrado", linewidth=2)
+        plt.xlabel("Tempo (s)")
+        plt.ylabel("Ângulo (graus)")
+        plt.title("Fusão sensorial IMU: Real vs. Medido vs. Filtrado")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(out_dir / "simulacao_kalman.png", dpi=160)
+
+        plt.figure(figsize=(12, 4))
+        plt.plot(t, bias_estimado, label="Bias estimado pelo KF")
+        plt.axhline(bias_giro_real, linestyle="--", label="Bias real do giroscópio")
+        plt.xlabel("Tempo (s)")
+        plt.ylabel("Bias (graus/s)")
+        plt.title("Estimativa do bias do giroscópio")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(out_dir / "bias_estimado.png", dpi=160)
+
+        plt.figure(figsize=(12, 4))
+        plt.plot(t, ganho_kalman_angulo, label="K[ângulo]")
+        plt.xlabel("Tempo (s)")
+        plt.ylabel("Ganho")
+        plt.title("Evolução do ganho de Kalman associado ao ângulo")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(out_dir / "ganho_kalman.png", dpi=160)
+
         plt.show()
 
-    return {'eqm_acelerometro': eqm_acelerometro,
-            'eqm_giroscopio': eqm_giroscopio,
-            'eqm_filtro': eqm_filtro,
-            'reducao_percentual': reducao}
+    return resultados
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    resultados = simular(salvar_figuras=True)
+    print("\nResultados da simulação")
+    print("-" * 32)
+    for chave, valor in resultados.items():
+        if isinstance(valor, float):
+            print(f"{chave}: {valor:.6f}")
+        else:
+            print(f"{chave}: {valor}")
