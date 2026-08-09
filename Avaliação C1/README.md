@@ -16,9 +16,6 @@ dos dois sensores e também estima o *bias* do giroscópio.
 | Adriano Pertile | 202601914 |
 | Aluizio Augusto Kleine Kirschner | 202603883 |
 
-> As matrículas não constam nos arquivos do repositório e precisam ser
-> preenchidas pelos integrantes antes da entrega.
-
 ## Estrutura do projeto
 
 - `src/kalman.py`: implementação genérica do Filtro de Kalman (Parte A);
@@ -33,7 +30,7 @@ dos dois sensores e também estima o *bias* do giroscópio.
 Requisitos: Git e Python 3.10 ou mais recente. Para a Parte C, também são
 necessários Arduino IDE, Arduino Mega 2560 e um módulo MPU6050 (GY-521).
 
-1. Clone o repositório do GitLab UFSC e entre no diretório da avaliação:
+1. Clone do repositório:
 
    ```bash
    git clone https://github.com/adrianop/ESE410034---Estatistica-para-analise-de-dados.git
